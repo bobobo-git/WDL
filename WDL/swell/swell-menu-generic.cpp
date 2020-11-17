@@ -32,6 +32,11 @@
 #include "../ptrlist.h"
 #include "../wdlcstring.h"
 
+static bool MenuIsStringType(const MENUITEMINFO *inf)
+{
+  return inf->fType == MFT_STRING || inf->fType == MFT_RADIOCHECK;
+}
+
 HMENU__ *HMENU__::Duplicate()
 {
   HMENU__ *p = new HMENU__;
@@ -42,7 +47,7 @@ HMENU__ *HMENU__::Duplicate()
     MENUITEMINFO *inf = (MENUITEMINFO*)calloc(sizeof(MENUITEMINFO),1);
 
     *inf = *s;
-    if (inf->dwTypeData && inf->fType == MFT_STRING) inf->dwTypeData=strdup(inf->dwTypeData);
+    if (inf->dwTypeData && MenuIsStringType(inf)) inf->dwTypeData=strdup(inf->dwTypeData);
     if (inf->hSubMenu) inf->hSubMenu = inf->hSubMenu->Duplicate();
 
     p->items.Add(inf);
@@ -55,13 +60,13 @@ void HMENU__::freeMenuItem(void *p)
   MENUITEMINFO *inf = (MENUITEMINFO *)p;
   if (!inf) return;
   if (inf->hSubMenu) inf->hSubMenu->Release();
-  if (inf->fType == MFT_STRING) free(inf->dwTypeData);
+  if (MenuIsStringType(inf)) free(inf->dwTypeData);
   free(inf);
 }
 
 static MENUITEMINFO *GetMenuItemByID(HMENU menu, int id, bool searchChildren=true)
 {
-  if (!menu) return 0;
+  if (WDL_NOT_NORMALLY(!menu)) return 0;
   int x;
   for (x = 0; x < menu->items.GetSize(); x ++)
     if (menu->items.Get(x)->wID == (UINT)id) return menu->items.Get(x);
@@ -80,11 +85,11 @@ static MENUITEMINFO *GetMenuItemByID(HMENU menu, int id, bool searchChildren=tru
 
 bool SetMenuItemText(HMENU hMenu, int idx, int flag, const char *text)
 {
-  MENUITEMINFO *item = hMenu ? ((flag & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
+  MENUITEMINFO *item = WDL_NORMALLY(hMenu) ? ((flag & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
   if (!item) return false;
 
-  if (item->fType == MFT_STRING) free(item->dwTypeData);
-  item->fType = MFT_STRING;
+  if (MenuIsStringType(item)) free(item->dwTypeData);
+  else item->fType = MFT_STRING;
   item->dwTypeData=strdup(text?text:"");
   
   return true;
@@ -92,7 +97,7 @@ bool SetMenuItemText(HMENU hMenu, int idx, int flag, const char *text)
 
 bool EnableMenuItem(HMENU hMenu, int idx, int en)
 {
-  MENUITEMINFO *item = hMenu ? ((en & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
+  MENUITEMINFO *item = WDL_NORMALLY(hMenu) ? ((en & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
   if (!item) return false;
  
   int mask = MF_ENABLED|MF_DISABLED|MF_GRAYED;
@@ -104,7 +109,7 @@ bool EnableMenuItem(HMENU hMenu, int idx, int en)
 
 bool CheckMenuItem(HMENU hMenu, int idx, int chk)
 {
-  MENUITEMINFO *item = hMenu ? ((chk & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
+  MENUITEMINFO *item = WDL_NORMALLY(hMenu) ? ((chk & MF_BYPOSITION) ? hMenu->items.Get(idx) : GetMenuItemByID(hMenu,idx)) : NULL;
   if (!item) return false;
   
   int mask = MF_CHECKED;
@@ -123,21 +128,26 @@ void SWELL_SetCurrentMenu(HMENU hmenu)
 
 HMENU GetSubMenu(HMENU hMenu, int pos)
 {
-  MENUITEMINFO *item = hMenu ? hMenu->items.Get(pos) : NULL;
+  MENUITEMINFO *item = WDL_NORMALLY(hMenu) ? hMenu->items.Get(pos) : NULL;
   if (item) return item->hSubMenu;
   return 0;
 }
 
 int GetMenuItemCount(HMENU hMenu)
 {
-  if (hMenu) return hMenu->items.GetSize();
+  if (WDL_NORMALLY(hMenu)) return hMenu->items.GetSize();
   return 0;
 }
 
 int GetMenuItemID(HMENU hMenu, int pos)
 {
-  MENUITEMINFO *item = hMenu ? hMenu->items.Get(pos) : NULL;
-  if (!item || item->hSubMenu) return -1;
+  MENUITEMINFO *item = WDL_NORMALLY(hMenu) ? hMenu->items.Get(pos) : NULL;
+  if (!item)
+  {
+    WDL_ASSERT(pos==0); // do not assert if GetMenuItemID(0) is called on an empty menu
+    return -1;
+  }
+  if (item->hSubMenu) return -1;
   return item->wID;
 }
 
@@ -157,12 +167,12 @@ HMENU CreatePopupMenuEx(const char *title)
 
 void DestroyMenu(HMENU hMenu)
 {
-  if (hMenu) hMenu->Release();
+  if (WDL_NORMALLY(hMenu)) hMenu->Release();
 }
 
 int AddMenuItem(HMENU hMenu, int pos, const char *name, int tagid)
 {
-  if (!hMenu) return -1;
+  if (WDL_NOT_NORMALLY(!hMenu)) return -1;
   MENUITEMINFO *inf = (MENUITEMINFO*)calloc(1,sizeof(MENUITEMINFO));
   inf->wID = tagid;
   inf->fType = MFT_STRING;
@@ -173,7 +183,7 @@ int AddMenuItem(HMENU hMenu, int pos, const char *name, int tagid)
 
 bool DeleteMenu(HMENU hMenu, int idx, int flag)
 {
-  if (!hMenu) return false;
+  if (WDL_NOT_NORMALLY(!hMenu)) return false;
   if (flag&MF_BYPOSITION)
   {
     if (hMenu->items.Get(idx))
@@ -209,7 +219,7 @@ bool DeleteMenu(HMENU hMenu, int idx, int flag)
 
 BOOL SetMenuItemInfo(HMENU hMenu, int pos, BOOL byPos, MENUITEMINFO *mi)
 {
-  if (!hMenu) return 0;
+  if (WDL_NOT_NORMALLY(!hMenu)) return 0;
   MENUITEMINFO *item = byPos ? hMenu->items.Get(pos) : GetMenuItemByID(hMenu, pos, true);
   if (!item) return 0;
   
@@ -220,11 +230,19 @@ BOOL SetMenuItemInfo(HMENU hMenu, int pos, BOOL byPos, MENUITEMINFO *mi)
   } 
   if (mi->fMask & MIIM_TYPE)
   {
-    if (item->fType == MFT_STRING) free(item->dwTypeData);
-    item->dwTypeData=0;
+    const bool wasString = MenuIsStringType(item), isString = MenuIsStringType(mi);
+    if (wasString != isString)
+    {
+      if (wasString) free(item->dwTypeData);
+      item->dwTypeData=NULL;
+    }
 
-    if (mi->fType == MFT_STRING && mi->dwTypeData) item->dwTypeData = strdup( mi->dwTypeData );
-    else if (mi->fType == MFT_BITMAP) item->dwTypeData = mi->dwTypeData;
+    if (mi->fType == MFT_BITMAP) item->dwTypeData = mi->dwTypeData;
+    else if (isString && mi->dwTypeData)
+    {
+      free(item->dwTypeData);
+      item->dwTypeData = strdup(mi->dwTypeData);
+    }
     item->fType = mi->fType;
   }
 
@@ -238,14 +256,14 @@ BOOL SetMenuItemInfo(HMENU hMenu, int pos, BOOL byPos, MENUITEMINFO *mi)
 
 BOOL GetMenuItemInfo(HMENU hMenu, int pos, BOOL byPos, MENUITEMINFO *mi)
 {
-  if (!hMenu) return 0;
+  if (WDL_NOT_NORMALLY(!hMenu)) return 0;
   MENUITEMINFO *item = byPos ? hMenu->items.Get(pos) : GetMenuItemByID(hMenu, pos, true);
   if (!item) return 0;
   
   if (mi->fMask & MIIM_TYPE)
   {
     mi->fType = item->fType;
-    if (item->fType == MFT_STRING && mi->dwTypeData && mi->cch)
+    if (MenuIsStringType(mi) && mi->dwTypeData && mi->cch)
     {
       lstrcpyn_safe(mi->dwTypeData,item->dwTypeData?item->dwTypeData:"",mi->cch);
     }
@@ -292,7 +310,7 @@ void SWELL_InsertMenu(HMENU menu, int pos, unsigned int flag, UINT_PTR idx, cons
 
 void InsertMenuItem(HMENU hMenu, int pos, BOOL byPos, MENUITEMINFO *mi)
 {
-  if (!hMenu) return;
+  if (WDL_NOT_NORMALLY(!hMenu)) return;
   int ni=hMenu->items.GetSize();
   
   if (!byPos) 
@@ -305,7 +323,7 @@ void InsertMenuItem(HMENU hMenu, int pos, BOOL byPos, MENUITEMINFO *mi)
   
   MENUITEMINFO *inf = (MENUITEMINFO*)calloc(sizeof(MENUITEMINFO),1);
   inf->fType = mi->fType;
-  if (mi->fType == MFT_STRING)
+  if (MenuIsStringType(inf))
   {
     inf->dwTypeData = strdup(mi->dwTypeData?mi->dwTypeData:"");
   }
@@ -419,7 +437,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
           if (inf->hbmpItem)
             GetObject(inf->hbmpItem,sizeof(bm2),&bm2);
 
-          if (inf->fType == MFT_STRING)
+          if (MenuIsStringType(inf))
           {
             RECT r={0,};
             const char *str = inf->dwTypeData;
@@ -545,7 +563,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
             if (inf->hbmpItem)
               GetObject(inf->hbmpItem,sizeof(bm2),&bm2);
 
-            if (inf->fType == MFT_STRING)
+            if (MenuIsStringType(inf))
             {
               const char *str = inf->dwTypeData;
               if (!str || !*str) str="XXXXX";
@@ -594,7 +612,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
               r.left += bm2.bmWidth + item_bm_pad;
             }
 
-            if (inf->fType == MFT_STRING)
+            if (MenuIsStringType(inf))
             {
               const char *str = inf->dwTypeData;
               if (!str) str="";
@@ -657,16 +675,23 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
               HGDIOBJ oldPen = SelectObject(ps.hdc,tpen);
               const int sz = (wdl_min(lcol, r.bottom-r.top) - SWELL_UI_SCALE(6));
               const int xo = SWELL_UI_SCALE(4), yo = (r.bottom+r.top)/2 - sz/2;
-              static const unsigned char coords[12] = { 128, 30, 108, 11, 48, 72, 48, 112, 0, 65, 20, 46, };
-              for (int pass=0;pass<2;pass++)
+              if (inf->fType&MFT_RADIOCHECK)
               {
-                POINT pts[4];
-                for (int i=0;i<4; i ++)
+                Ellipse(ps.hdc, xo, yo, xo+sz, yo+sz);
+              }
+              else
+              {
+                static const unsigned char coords[12] = { 128, 30, 108, 11, 48, 72, 48, 112, 0, 65, 20, 46, };
+                for (int pass=0;pass<2;pass++)
                 {
-                  pts[i].x = xo + ((int)coords[i*2+pass*4] * sz + 63) / 128;
-                  pts[i].y = yo + ((int)coords[i*2+pass*4+1] * sz + 63) / 128;
+                  POINT pts[4];
+                  for (int i=0;i<4; i ++)
+                  {
+                    pts[i].x = xo + ((int)coords[i*2+pass*4] * sz + 63) / 128;
+                    pts[i].y = yo + ((int)coords[i*2+pass*4+1] * sz + 63) / 128;
+                  }
+                  Polygon(ps.hdc,pts,4);
                 }
-                Polygon(ps.hdc,pts,4);
               }
 
               SelectObject(ps.hdc,oldPen);
@@ -900,7 +925,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
         for(int x=0;x<n+n;x++)
         {
           MENUITEMINFO *inf = menu->items.Get(offs);
-          if (inf->fType == MFT_STRING && 
+          if (MenuIsStringType(inf) && 
               !(inf->fState & MF_GRAYED) &&
               inf->dwTypeData)
           {
@@ -971,7 +996,7 @@ static LRESULT WINAPI submenuWndProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM
           if (inf->hbmpItem)
             GetObject(inf->hbmpItem,sizeof(bm2),&bm2);
 
-          if (inf->fType == MFT_STRING)
+          if (MenuIsStringType(inf))
           {
             RECT r={0,};
             const char *str = inf->dwTypeData;
@@ -1104,7 +1129,7 @@ DWORD swell_ignore_focus_oswindow_until;
 
 int TrackPopupMenu(HMENU hMenu, int flags, int xpos, int ypos, int resvd, HWND hwnd, const RECT *r)
 {
-  if (!hMenu || m_trackingMenus.GetSize()) return 0;
+  if (WDL_NOT_NORMALLY(!hMenu) || m_trackingMenus.GetSize()) return 0;
 
   ReleaseCapture();
 
@@ -1209,13 +1234,13 @@ HMENU SWELL_LoadMenu(SWELL_MenuResourceIndex *head, const char *resid)
 
 HMENU SWELL_DuplicateMenu(HMENU menu)
 {
-  if (!menu) return 0;
+  if (WDL_NOT_NORMALLY(!menu)) return 0;
   return menu->Duplicate();
 }
 
 BOOL  SetMenu(HWND hwnd, HMENU menu)
 {
-  if (!hwnd) return 0;
+  if (WDL_NOT_NORMALLY(!hwnd)) return 0;
   HMENU oldmenu = hwnd->m_menu;
 
   hwnd->m_menu = menu;
@@ -1240,13 +1265,13 @@ BOOL  SetMenu(HWND hwnd, HMENU menu)
 
 HMENU GetMenu(HWND hwnd)
 {
-  if (!hwnd) return 0;
+  if (WDL_NOT_NORMALLY(!hwnd)) return 0;
   return hwnd->m_menu;
 }
 
 void DrawMenuBar(HWND hwnd)
 {
-  if (hwnd && hwnd->m_menu)
+  if (WDL_NORMALLY(hwnd) && hwnd->m_menu)
   {
     RECT r;
     GetClientRect(hwnd,&r);
