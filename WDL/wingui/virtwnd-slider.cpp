@@ -39,11 +39,9 @@ void vwnd_slider_drawknobstack(LICE_IBitmap *drawbm, double val, WDL_VirtualWnd_
 
   const int ni=((v ? knobimage->bgimage->getHeight() : knobimage->bgimage->getWidth())-ks_offs*2) / (v ? ksh : ksw);
 
-  if (val<0.0)val=0.0;
-  else if (val>1.0)val=1.0;
-  int p=(int) (val * (ni-1));
+  int p=(int) floor(wdl_clamp(val,0.0,1.0) * (ni-1) + ((ni&1) ? 0.5 : 0.0));
+  if (p > ni-1) p=ni-1;
   if (p<0) p=0;
-  else if (p> ni-1) p=ni-1;
 
   p *= (v ? ksh : ksw);
 
@@ -167,6 +165,8 @@ WDL_VirtualWnd_BGCfg *vwnd_slider_getknobimageforsize(WDL_VirtualWnd_BGCfg *knob
 
 WDL_VirtualSlider::WDL_VirtualSlider()
 {
+  calculate_slider_position=NULL;
+  calculate_slider_position_ctx=NULL;
   m_accessDescCopy=0;
   m_knob_lineextrasize=0;
   m_knobbias=0;
@@ -354,6 +354,13 @@ WDL_VirtualWnd_BGCfg *WDL_VirtualSlider::getKnobBackgroundForSize(int sz) const
 
 void WDL_VirtualSlider::OnPaint(LICE_IBitmap *drawbm, int origin_x, int origin_y, RECT *cliprect, int rscale)
 {
+  if (!m_captured && calculate_slider_position)
+  {
+    int pos = calculate_slider_position(this,calculate_slider_position_ctx);
+    if (pos < m_minr) pos=m_minr;
+    else if (pos>m_maxr) pos=m_maxr;
+    m_pos = pos;
+  }
   RECT mp;
   m_last_advscale = drawbm ? (int)drawbm->Extended(LICE_EXT_GET_ADVISORY_SCALING,NULL) : 0;
   m_last_rscale=rscale;
