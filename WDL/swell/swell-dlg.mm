@@ -801,7 +801,7 @@ static void SendTreeViewExpandNotification(SWELL_hwndChild *par, NSNotification 
     if ([sender isKindOfClass:[SWELL_ComboBox class]])
     {
       SWELL_ComboBox *p = (SWELL_ComboBox *)sender;
-      const int sel = [p indexOfSelectedItem];
+      const int sel = (int)[p indexOfSelectedItem];
       if (sel == p->m_ignore_selchg) return;
       p->m_ignore_selchg = sel;
     }
@@ -2018,8 +2018,6 @@ static void MakeGestureInfo(NSEvent* evt, GESTUREINFO* gi, HWND hwnd, int type)
   if (!m_supports_ddrop) return 0;
   
   NSPasteboard *pboard;
-  NSDragOperation sourceDragMask;
-  sourceDragMask = [sender draggingSourceOperationMask];
   pboard = [sender draggingPasteboard];
  
   enum { PB_FILEREF=1, PB_FILEPROMISE };
