@@ -1166,7 +1166,7 @@ static LRESULT WINAPI swellMessageBoxProc(HWND hwnd, UINT uMsg, WPARAM wParam, L
 
         SWELL_MakeSetCurParms(1,1,0,0,hwnd,false,false);
         RECT labsize = {0,0,300,20};
-        HWND lab = SWELL_MakeLabel(-1,parms[0] ? (const char *)parms[0] : "", IDC_LABEL, 0,0,10,10,SS_CENTER); //we'll resize this manually
+        HWND lab = SWELL_MakeLabel(-1,parms[0] ? (const char *)parms[0] : "", IDC_LABEL, 0,0,10,10,SS_CENTER|SS_NOPREFIX); //we'll resize this manually
         HDC dc=GetDC(lab); 
         if (lab && parms[0])
         {
@@ -1817,7 +1817,7 @@ static LRESULT WINAPI swellFontChooserProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
                 for (int y=0;y<2;y++)
                 {
                   char c = *trail;
-                  if (c>0) c=toupper(c);
+                  if (c>0) c=toupper_safe(c);
                   if (c == 'B' || c == 'I' || c == 'L') trail++;
                 }
               }
@@ -1837,6 +1837,24 @@ static LRESULT WINAPI swellFontChooserProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
           }
         }
         SetDlgItemText(hwnd,IDC_FACE,cs->font.lfFaceName);
+        if (cs->font.lfHeight > 0)
+        {
+          HFONT font = CreateFontIndirect(&cs->font);
+          if (font)
+          {
+            HDC hdc = GetDC(hwnd);
+            if (hdc)
+            {
+              HGDIOBJ oldfont = SelectObject(hdc,font);
+              TEXTMETRIC tm = { 0, };
+              GetTextMetrics(hdc,&tm);
+              if (tm.tmHeight > 0) cs->font.lfHeight = -tm.tmHeight;
+              SelectObject(hdc,oldfont);
+              ReleaseDC(hwnd,hdc);
+            }
+            DeleteObject(font);
+          }
+        }
         SetDlgItemInt(hwnd,IDC_SIZE,cs->font.lfHeight < 0 ? -cs->font.lfHeight : cs->font.lfHeight,TRUE);
         SendDlgItemMessage(hwnd,IDC_WEIGHT,CB_SETCURSEL,wt<=FW_LIGHT ? 2 : wt < FW_BOLD ? 0 : 1,0);
         if (italics)
@@ -1854,11 +1872,12 @@ static LRESULT WINAPI swellFontChooserProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
         SendDlgItemMessage(hwnd,IDC_LIST,LB_GETTEXT,di->itemID,(WPARAM)buf);
         if (buf[0])
         {
-          HFONT font = CreateFont(g_swell_ctheme.default_font_size, 0, 0, 0, cs->font.lfWeight, cs->font.lfItalic, 
+          HFONT font = CreateFont(-wdl_abs(g_swell_ctheme.default_font_size), 0, 0, 0,
+              cs->font.lfWeight, cs->font.lfItalic,
               FALSE, FALSE, ANSI_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, DEFAULT_QUALITY, DEFAULT_PITCH, buf);
 
           HGDIOBJ oldFont = SelectObject(di->hDC,font);
-          DrawText(di->hDC,buf,-1,&di->rcItem,DT_VCENTER|DT_LEFT|DT_NOPREFIX);
+          DrawText(di->hDC,buf,-1,&di->rcItem,DT_VCENTER|DT_LEFT|DT_SINGLELINE|DT_NOPREFIX);
           wchar_t tmp[] = {'a','A','z','Z'};
           unsigned short ind[4];
           GetGlyphIndicesW(di->hDC,tmp,4,ind,0);
@@ -1870,7 +1889,7 @@ static LRESULT WINAPI swellFontChooserProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
           {
             RECT r = di->rcItem;
             r.right-=4;
-            DrawText(di->hDC,buf,-1,&r,DT_VCENTER|DT_RIGHT|DT_NOPREFIX);
+            DrawText(di->hDC,buf,-1,&r,DT_VCENTER|DT_RIGHT|DT_SINGLELINE|DT_NOPREFIX);
           }
           DeleteObject(font);
 
@@ -2007,11 +2026,8 @@ static LRESULT WINAPI swellFontChooserProc(HWND hwnd, UINT uMsg, WPARAM wParam, 
             {
               BOOL t;
               int a = GetDlgItemInt(hwnd,IDC_SIZE,&t,FALSE);
-              if (t)
-              {
-                if (cs->font.lfHeight < 0) cs->font.lfHeight = -a;
-                else cs->font.lfHeight = a;
-              }
+              if (t && a > 0)
+                cs->font.lfHeight = -a;
             }
             else if (LOWORD(wParam) == IDC_ITALIC) cs->font.lfItalic = IsDlgButtonChecked(hwnd,IDC_ITALIC) ? 1:0;
             else if (LOWORD(wParam) == IDC_WEIGHT && HIWORD(wParam) == CBN_SELCHANGE)

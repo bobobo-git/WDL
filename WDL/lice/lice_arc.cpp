@@ -22,8 +22,34 @@ template <class T> inline void _SWAP(T& a, T& b) { T tmp = a; a = b; b = tmp; }
 
 static bool CachedCircle(LICE_IBitmap* dest, float cx, float cy, float r, LICE_pixel color, float alpha, int mode, bool aa, bool fill)
 {
-  // fast draw for some small circles 
-  if (r == 1.5f)
+  // fast draw for some small circles
+  if (r == 1.0f)
+  {
+    if (aa)
+    {
+#define __ALPHAS__(B) \
+        A(0.31), A(1.00), A(0.31), \
+        A(1.00), B(0.06), A(1.00), \
+        A(0.31), A(1.00), A(0.31),
+
+      DEF_ALPHAS(3)
+#undef __ALPHAS__
+      LICE_DrawGlyph(dest, cx-r, cy-r, color, alphas, 3, 3, alpha, mode);
+    }
+    else
+    {
+#define __ALPHAS__(B) \
+        A(0.00), A(1.00), A(0.00), \
+        A(1.00), B(0.00), A(1.00), \
+        A(0.00), A(1.00), A(0.00),
+
+      DEF_ALPHAS(3)
+#undef __ALPHAS__
+      LICE_DrawGlyph(dest, cx-r, cy-r, color, alphas, 3, 3, alpha, mode);
+    }
+    return true;
+  }
+  else if (r == 1.5f)
   {
     if (aa) 
     {
@@ -340,8 +366,8 @@ public:
   {
     int r = LICE_GETR(color), g = LICE_GETG(color), b = LICE_GETB(color), a = LICE_GETA(color);
     
-    const int cx0=(int)(cx+0.5f);
-    const int cy0=(int)(cy+0.5f);
+    const int cx0=(int)floor(cx+0.5f);
+    const int cy0=(int)floor(cy+0.5f);
 
     int y=(int)rad;
     double w=rad-floor(rad);
@@ -428,8 +454,8 @@ public:
   {
     const int r = LICE_GETR(color), g = LICE_GETG(color), b = LICE_GETB(color), a = LICE_GETA(color);
 
-    const int cx0=(int)(cx+0.5f);
-    const int cy0=(int)(cy+0.5f);
+    const int cx0=(int)floor(cx+0.5f);
+    const int cy0=(int)floor(cy+0.5f);
     const int r0=(int)(rad+0.5f);
    
     if (filled)
@@ -534,16 +560,16 @@ static void __DrawArc(int w, int h, LICE_IBitmap* dest, float cx, float cy, floa
 
   double next_ang = anglo - fmod(anglo,0.5*_PI);
 
-  int ly = (int)(cy - rad*cos(anglo) + 0.5);
-  int lx = (int)(cx + rad*sin(anglo) + 0.5);
+  int ly = (int)floor(cy - rad*cos(anglo) + 0.5);
+  int lx = (int)floor(cx + rad*sin(anglo) + 0.5);
 
   while (anglo < anghi)
   {
     next_ang += 0.5*_PI;
     if (next_ang > anghi) next_ang = anghi;
 
-    int yhi = (int) (cy-rad*cos(next_ang)+0.5);
-    int xhi = (int) (cx+rad*sin(next_ang)+0.5);
+    int yhi = (int) floor(cy-rad*cos(next_ang)+0.5);
+    int xhi = (int) floor(cx+rad*sin(next_ang)+0.5);
     int ylo = ly;
     int xlo = lx;
 
@@ -684,6 +710,10 @@ void LICE_FillCircle(LICE_IBitmap* dest, float cx, float cy, float r, LICE_pixel
 void LICE_RoundRect(LICE_IBitmap *drawbm, float xpos, float ypos, float w, float h, int cornerradius,
                     LICE_pixel col, float alpha, int mode, bool aa)
 {
+  xpos = floor(xpos+0.5);
+  ypos = floor(ypos+0.5);
+  w = floor(w+0.5);
+  h = floor(h+0.5);
   if (cornerradius>0)
   {
     float cr=cornerradius;
@@ -722,6 +752,6 @@ void LICE_RoundRect(LICE_IBitmap *drawbm, float xpos, float ypos, float w, float
     }
   }
 
-  LICE_DrawRect(drawbm, xpos, ypos, w, h, col, alpha, mode);
+  LICE_DrawRect(drawbm, (int)xpos, (int)ypos, (int)w, (int)h, col, alpha, mode);
 }
 

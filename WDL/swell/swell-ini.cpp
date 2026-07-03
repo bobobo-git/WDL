@@ -40,11 +40,9 @@
 #include <sys/file.h>
 #include <sys/types.h>
 
-static void deleteStringKeyedArray(WDL_StringKeyedArray<char *> *p) {   delete p; }
-
 struct iniFileContext
 {
-  iniFileContext() : m_sections(false,deleteStringKeyedArray) 
+  iniFileContext() : m_sections(false,wdl_deletefunc)
   { 
     m_curfn=NULL;
     m_lastaccesscnt=0;
@@ -71,6 +69,19 @@ static time_t getfileupdtimesize(const char *fn, int *szOut)
   struct stat st;
   *szOut = 0;
   if (!fn || !fn[0] || stat(fn,&st)) return 0;
+
+  if (S_ISLNK(st.st_mode))
+  {
+    char *linkpath = realpath(fn,NULL);
+    if (linkpath)
+    {
+      const bool ok = !stat(linkpath,&st);
+      free(linkpath);
+
+      if (!ok) return 0;
+    }
+  }
+
   *szOut = (int)st.st_size;
   return st.st_mtime;
 }
@@ -204,7 +215,7 @@ static iniFileContext *GetFileContext(const char *name)
             cursec = ctx->m_sections.Get(p+1);
             if (!cursec)
             {
-              cursec = new WDL_StringKeyedArray<char *>(false,WDL_StringKeyedArray<char *>::freecharptr);
+              cursec = new WDL_StringKeyedArray<char *>(false,wdl_freefunc);
               ctx->m_sections.Insert(p+1,cursec);
             }
             else cursec->DeleteAll();
@@ -218,6 +229,8 @@ static iniFileContext *GetFileContext(const char *name)
         if (t)
         {
           *t++=0;
+          // for maximum win32 compat, we should skip leading whitespace on t, and also trim quotes if any
+          WDL_remove_trailing_whitespace(p);
           if (*p) 
             cursec->AddUnsorted(p,strdup(t));
         }
@@ -236,7 +249,18 @@ static void WriteBackFile(iniFileContext *ctx)
 {
   if (!ctx||!ctx->m_curfn) return;
   char newfn[1024];
-  lstrcpyn_safe(newfn,ctx->m_curfn,sizeof(newfn)-8);
+
+  const char *curfn = ctx->m_curfn;
+
+  struct stat st;
+  char *needfree = NULL;
+  if (!stat(curfn,&st) && S_ISLNK(st.st_mode))
+  {
+    needfree = realpath(curfn,NULL);
+    if (needfree) curfn = needfree;
+  }
+
+  lstrcpyn_safe(newfn,curfn,sizeof(newfn)-8);
   {
     char *p=newfn;
     while (*p) p++;
@@ -253,7 +277,11 @@ static void WriteBackFile(iniFileContext *ctx)
   }
 
   FILE *fp = WDL_fopenA(newfn,"w");
-  if (!fp) return;
+  if (!fp)
+  {
+    free(needfree);
+    return;
+  }
   
   flock(fileno(fp),LOCK_EX);
   
@@ -280,14 +308,15 @@ static void WriteBackFile(iniFileContext *ctx)
   flock(fileno(fp),LOCK_UN);
   fclose(fp);
 
-  if (!rename(newfn,ctx->m_curfn))
+  if (!rename(newfn,curfn))
   {
-    ctx->m_curfn_time = getfileupdtimesize(ctx->m_curfn,&ctx->m_curfn_sz);
+    ctx->m_curfn_time = getfileupdtimesize(curfn,&ctx->m_curfn_sz);
   }
   else
   {
     // error updating, hmm how to handle this?
   }
+  free(needfree);
 }
 
 BOOL WritePrivateProfileSection(const char *appname, const char *strings, const char *fn)
@@ -302,7 +331,7 @@ BOOL WritePrivateProfileSection(const char *appname, const char *strings, const 
   {
     if (!*strings) return TRUE;
     
-    cursec = new WDL_StringKeyedArray<char *>(false,WDL_StringKeyedArray<char *>::freecharptr);   
+    cursec = new WDL_StringKeyedArray<char *>(false,wdl_freefunc);
     ctx->m_sections.Insert(appname,cursec);
   }
   else cursec->DeleteAll();
@@ -365,7 +394,7 @@ BOOL WritePrivateProfileString(const char *appname, const char *keyname, const c
       {
         if (!cursec) 
         {
-          cursec = new WDL_StringKeyedArray<char *>(false,WDL_StringKeyedArray<char *>::freecharptr);   
+          cursec = new WDL_StringKeyedArray<char *>(false,wdl_freefunc);
           ctx->m_sections.Insert(appname,cursec);
         }
         cursec->Insert(keyname,strdup(val));
@@ -572,7 +601,7 @@ BOOL GetPrivateProfileStruct(const char *appname, const char *keyname, void *buf
       sum += cv;
       src+=2;
     }
-    ret = bufsz<0 && __readbyte(src,&cv) && cv==sum;
+    ret = bufsz<0 && WDL_NORMALLY(__readbyte(src,&cv) && cv==sum);
   }
   free(tmp);
   //printf("getprivateprofilestruct returning %d\n",ret);
